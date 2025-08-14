@@ -3,18 +3,15 @@ import pandas as pd
 import geopandas as gpd
 import plotly.express as px
 import leafmap.foliumap as leafmap
-import rasterio
-import os
-from datetime import datetime
+
+# Set Streamlit page config
+st.set_page_config(page_title="Ethiopia - Context & Programme Monitoring Dashboard", layout="wide")
+
+# App title
+st.title("🇪🇹 Ethiopia - Context & Programme Monitoring Dashboard")
 
 # GitHub raw base path
 GITHUB_BASE = "https://raw.githubusercontent.com/rgalgani/dashboard/main/"
-
-# Streamlit page config
-st.set_page_config(page_title="Ethiopia - Context & Programme Monitoring Dashboard", layout="wide")
-
-# App Title
-st.title("🇪🇹 Ethiopia - Context & Programme Monitoring Dashboard")
 
 # Tabs
 tab1, tab2, tab3 = st.tabs(["📊 Context", "📈 M&E", "🔍 Ask the Data!"])
@@ -35,7 +32,7 @@ with tab1:
     # --- Charts Section ---
     st.subheader("Violent Events Over Time")
 
-    # Line Chart
+    # Line Chart: monthly count
     acled['event_date'] = pd.to_datetime(acled['event_date'])
     timeseries = acled.groupby(acled['event_date'].dt.to_period("M")).size().reset_index(name="count")
     timeseries['event_date'] = timeseries['event_date'].dt.to_timestamp()
@@ -43,7 +40,7 @@ with tab1:
     fig_line = px.line(timeseries, x="event_date", y="count", labels={'event_date': 'Date', 'count': 'Number of Events'})
     st.plotly_chart(fig_line, use_container_width=True)
 
-    # Bar Chart by Admin1
+    # Bar Chart: events by admin1
     st.subheader("Violent Events by Region (Admin1)")
     if 'admin1' in acled.columns:
         region_counts = acled['admin1'].value_counts().reset_index()
@@ -54,28 +51,31 @@ with tab1:
         st.warning("No 'admin1' column found in the data.")
 
     # --- Map Section ---
-    st.subheader("🗺️ Conflict & Environmental Layers Map")
+    st.subheader("🗺️ Map of Violent Events")
 
-    # Map Object
-    m = leafmap.Map(center=[9.145, 40.4897], zoom=5)
+    # Filter for rows with valid coordinates
+    acled_map = acled.dropna(subset=['latitude', 'longitude'])
 
-    # Raster toggles
-    raster_options = {
-        "Vegetation": GITHUB_BASE + "Vegetation.tif",
-        "Population Density": GITHUB_BASE + "Popdensity.tif"
-    }
-    selected_layers = st.multiselect("Select Layers to Display on Map", options=list(raster_options.keys()), default=list(raster_options.keys()))
+    if not acled_map.empty:
+        gdf = gpd.GeoDataFrame(
+            acled_map,
+            geometry=gpd.points_from_xy(acled_map.longitude, acled_map.latitude),
+            crs="EPSG:4326"
+        )
 
-    # Add selected raster layers
-    for layer_name in selected_layers:
-        m.add_raster(raster_options[layer_name], layer_name=layer_name, colormap="viridis", opacity=0.6)
+        # Initialize map
+        m = leafmap.Map(center=[9.145, 40.4897], zoom=5)
 
-    # Add violent event markers
-    if 'latitude' in acled.columns and 'longitude' in acled.columns:
-        gdf = gpd.GeoDataFrame(acled, geometry=gpd.points_from_xy(acled.longitude, acled.latitude))
-        m.add_gdf(gdf[['geometry']], layer_name="Violent Events", zoom_to_layer=False)
+        # Add events layer
+        m.add_gdf(
+            gdf[['geometry']], 
+            layer_name="Violent Events", 
+            zoom_to_layer=True
+        )
 
-    m.to_streamlit(height=600)
+        m.to_streamlit(height=600)
+    else:
+        st.warning("No geolocated violent events found in the dataset.")
 
 # ---------- TAB 2: M&E ----------
 with tab2:
